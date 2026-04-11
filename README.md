@@ -9,6 +9,13 @@ The project keeps the asymmetric idea from QS-Tunnel:
 
 For uplink speed, the DNS transport style is closer to MasterDnsVPN than the original QS-Tunnel framing. The client builds binary uplink fragments, encodes them with a MasterDns-style lower-base36 transport, and then splits them into DNS labels.
 
+> [!WARNING]
+> This project is experimental and can be risky to use.
+> DNS tunneling and spoofed packet techniques may be detected, blocked, or treated as suspicious by networks, providers, or governments.
+> Misconfiguration can break connectivity, expose traffic patterns, or disrupt networks.
+> Raw spoofing mode may violate provider rules or local laws in some jurisdictions.
+> Use it only if you understand the operational, legal, and safety risks, and only in environments where you accept responsibility for those risks.
+
 ## What it does
 
 - runs as a `client` or `server` CLI
