@@ -1,0 +1,25 @@
+{
+  "relay_listen": "127.0.0.1:18080",
+  "downlink_bind": "0.0.0.0:0",
+  "announce_public_ip": "198.51.100.10",
+  "announce_receive_port": 0,
+  "spoof_source_ip": "203.0.113.50",
+  "spoof_source_port": 8443,
+  "info_secret": "replace-me",
+  "send_domains": [
+    "t.example.com"
+  ],
+  "resolvers": [
+    "1.1.1.1:53",
+    "8.8.8.8:53"
+  ],
+  "client_id_length": 7,
+  "offset_width": 3,
+  "max_label_len": 63,
+  "max_qname_len": 253,
+  "query_type": 1,
+  "duplication": 1,
+  "send_delay": "2ms",
+  "info_interval": "20s"
+}
+
