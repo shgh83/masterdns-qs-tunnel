@@ -63,6 +63,6 @@ You will need to replace the example addresses and domains with real values befo
 
 If this project helps people connect to the internet, please consider donating to keep it alive and support further work.
 
-BEP-20 (BNB Chain):
+BEP-20 USDT (BNB Chain):
 
 `0x2455B82cEAD31ceC026ae930B932a22Bb994FB76`
