@@ -1,6 +1,11 @@
 # masterdns-qs-tunnel
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/blackestwhite/masterdns-qs-tunnel)
+
 `masterdns-qs-tunnel` is a Go tunnel inspired by `QS-Tunnel` and `MasterDnsVPN`.
+
+DeepWiki uses AI to explain the repository, architecture, and code layout:
+[deepwiki.com/blackestwhite/masterdns-qs-tunnel](https://deepwiki.com/blackestwhite/masterdns-qs-tunnel)
 
 The project keeps the asymmetric idea from QS-Tunnel:
 
