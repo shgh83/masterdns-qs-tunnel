@@ -1,3 +1,5 @@
+//go:build !windows
+
 package spoof
 
 import (
@@ -24,7 +26,7 @@ func NewRawUDPSender() (*RawUDPSender, error) {
 }
 
 func (s *RawUDPSender) Close() error {
-	if s == nil || s.fd == 0 {
+	if s == nil || s.fd <= 0 {
 		return nil
 	}
 	return syscall.Close(s.fd)

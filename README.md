@@ -58,6 +58,7 @@ You will need to replace the example addresses and domains with real values befo
 - raw spoofed replies require infrastructure that can actually transmit spoofed packets
 - the current implementation focuses on the UDP relay model
 - IPv4 is supported for the spoof metadata and raw spoof sender
+- Windows builds are published, but raw spoofing mode is currently unsupported on Windows at runtime
 
 ## Support The Project
 
