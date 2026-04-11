@@ -9,27 +9,8 @@ permissions:
   contents: write
 
 jobs:
-  build-and-release:
+  test:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - goos: linux
-            goarch: amd64
-            archive: tar.gz
-          - goos: linux
-            goarch: arm64
-            archive: tar.gz
-          - goos: darwin
-            goarch: amd64
-            archive: tar.gz
-          - goos: darwin
-            goarch: arm64
-            archive: tar.gz
-          - goos: windows
-            goarch: amd64
-            archive: zip
 
     steps:
       - name: Check Out
@@ -43,46 +24,81 @@ jobs:
       - name: Test
         run: go test ./...
 
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: freebsd
+            goarch: amd64
+          - goos: freebsd
+            goarch: arm64
+
+    steps:
+      - name: Check Out
+        uses: actions/checkout@v4
+
+      - name: Set Up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
       - name: Build Package
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
-          ARCHIVE: ${{ matrix.archive }}
           VERSION: ${{ github.ref_name }}
         run: |
           set -euo pipefail
 
           BIN_NAME="masterdns-qs-tunnel"
-          EXT=""
-          if [ "$GOOS" = "windows" ]; then
-            EXT=".exe"
-          fi
-
           PKG_NAME="${BIN_NAME}_${VERSION}_${GOOS}_${GOARCH}"
           STAGE_DIR="dist/${PKG_NAME}"
           mkdir -p "${STAGE_DIR}/configs"
 
           CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" \
             go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" \
-            -o "${STAGE_DIR}/${BIN_NAME}${EXT}" ./cmd/masterdns-qs-tunnel
+            -o "${STAGE_DIR}/${BIN_NAME}" ./cmd/masterdns-qs-tunnel
 
           cp README.md "${STAGE_DIR}/README.md"
           cp configs/client.example.json "${STAGE_DIR}/configs/client.example.json"
           cp configs/server.example.json "${STAGE_DIR}/configs/server.example.json"
 
-          if [ "$ARCHIVE" = "zip" ]; then
-            (
-              cd dist
-              zip -rq "${PKG_NAME}.zip" "${PKG_NAME}"
-            )
-            rm -rf "${STAGE_DIR}"
-          else
-            tar -C dist -czf "dist/${PKG_NAME}.tar.gz" "${PKG_NAME}"
-            rm -rf "${STAGE_DIR}"
-          fi
+          tar -C dist -czf "dist/${PKG_NAME}.tar.gz" "${PKG_NAME}"
+          rm -rf "${STAGE_DIR}"
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download Build Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: release-*
+          merge-multiple: true
 
       - name: Publish Release Assets
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*
           generate_release_notes: true
+          overwrite_files: true

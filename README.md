@@ -25,6 +25,15 @@ Release binaries are built with GitHub Actions and published on the release page
 
 [GitHub Releases](https://github.com/blackestwhite/masterdns-qs-tunnel/releases)
 
+Current release targets:
+
+- Linux `amd64`
+- Linux `arm64`
+- macOS `amd64`
+- macOS `arm64`
+- FreeBSD `amd64`
+- FreeBSD `arm64`
+
 ## Build From Source
 
 ```bash
@@ -58,7 +67,6 @@ You will need to replace the example addresses and domains with real values befo
 - raw spoofed replies require infrastructure that can actually transmit spoofed packets
 - the current implementation focuses on the UDP relay model
 - IPv4 is supported for the spoof metadata and raw spoof sender
-- Windows builds are published, but raw spoofing mode is currently unsupported on Windows at runtime
 
 ## Support The Project
 
