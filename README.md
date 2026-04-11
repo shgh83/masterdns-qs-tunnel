@@ -41,6 +41,11 @@ Current release targets:
 - FreeBSD `amd64`
 - FreeBSD `arm64`
 
+## Guides
+
+- [Setup guide](docs/SETUP.md)
+- [Configuration guide](docs/CONFIGURATION.md)
+
 ## Build From Source
 
 ```bash
