@@ -37,7 +37,7 @@ func (d Duration) Value() time.Duration {
 }
 
 type ClientConfig struct {
-	RelayListen         string   `json:"relay_listen"`
+	SocksListen         string   `json:"socks_listen"`
 	DownlinkBind        string   `json:"downlink_bind"`
 	AnnouncePublicIP    string   `json:"announce_public_ip"`
 	AnnounceReceivePort int      `json:"announce_receive_port"`
@@ -61,7 +61,6 @@ type ClientConfig struct {
 type ServerConfig struct {
 	Listen            string   `json:"listen"`
 	AllowedDomains    []string `json:"allowed_domains"`
-	Upstream          string   `json:"upstream"`
 	ClientIDLength    int      `json:"client_id_length"`
 	OffsetWidth       int      `json:"offset_width"`
 	InfoSecret        string   `json:"info_secret"`
@@ -69,11 +68,12 @@ type ServerConfig struct {
 	SessionIdle       Duration `json:"session_idle_timeout"`
 	UseRawSpoofing    bool     `json:"use_raw_spoofing"`
 	ReplyTTL          int      `json:"reply_ttl"`
+	DialTimeout       Duration `json:"dial_timeout"`
 }
 
 func DefaultClientConfig() ClientConfig {
 	return ClientConfig{
-		RelayListen:         "127.0.0.1:18080",
+		SocksListen:         "127.0.0.1:1080",
 		DownlinkBind:        "0.0.0.0:0",
 		ClientIDLength:      7,
 		OffsetWidth:         3,
@@ -95,6 +95,7 @@ func DefaultServerConfig() ServerConfig {
 		ReassemblyTimeout: Duration(30 * time.Second),
 		SessionIdle:       Duration(2 * time.Minute),
 		ReplyTTL:          64,
+		DialTimeout:       Duration(10 * time.Second),
 	}
 }
 
@@ -152,6 +153,9 @@ func (c ClientConfig) Validate() error {
 	if len(c.SendDomains) == 0 {
 		return fmt.Errorf("send_domains is required")
 	}
+	if strings.TrimSpace(c.SocksListen) == "" {
+		return fmt.Errorf("socks_listen is required")
+	}
 	if strings.TrimSpace(c.AnnouncePublicIP) == "" {
 		return fmt.Errorf("announce_public_ip is required")
 	}
@@ -188,9 +192,6 @@ func (c ClientConfig) Validate() error {
 func (c ServerConfig) Validate() error {
 	if strings.TrimSpace(c.Listen) == "" {
 		return fmt.Errorf("listen is required")
-	}
-	if strings.TrimSpace(c.Upstream) == "" {
-		return fmt.Errorf("upstream is required")
 	}
 	if len(c.AllowedDomains) == 0 {
 		return fmt.Errorf("allowed_domains is required")
