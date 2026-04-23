@@ -3,7 +3,6 @@
   "allowed_domains": [
     "t.example.com"
   ],
-  "upstream": "127.0.0.1:9000",
   "client_id_length": 7,
   "offset_width": 3,
   "info_secret": "replace-me",

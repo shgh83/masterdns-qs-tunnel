@@ -37,6 +37,7 @@ func (d Duration) Value() time.Duration {
 }
 
 type ClientConfig struct {
+	Socks5Listen        string   `json:"socks5_listen"`
 	RelayListen         string   `json:"relay_listen"`
 	DownlinkBind        string   `json:"downlink_bind"`
 	AnnouncePublicIP    string   `json:"announce_public_ip"`
@@ -73,6 +74,7 @@ type ServerConfig struct {
 
 func DefaultClientConfig() ClientConfig {
 	return ClientConfig{
+		Socks5Listen:        "127.0.0.1:1080",
 		RelayListen:         "127.0.0.1:18080",
 		DownlinkBind:        "0.0.0.0:0",
 		ClientIDLength:      7,
@@ -149,6 +151,9 @@ func (c *ClientConfig) EnsureClientID() error {
 }
 
 func (c ClientConfig) Validate() error {
+	if strings.TrimSpace(c.Socks5Listen) == "" && strings.TrimSpace(c.RelayListen) == "" {
+		return fmt.Errorf("either socks5_listen or relay_listen is required")
+	}
 	if len(c.SendDomains) == 0 {
 		return fmt.Errorf("send_domains is required")
 	}
@@ -188,9 +193,6 @@ func (c ClientConfig) Validate() error {
 func (c ServerConfig) Validate() error {
 	if strings.TrimSpace(c.Listen) == "" {
 		return fmt.Errorf("listen is required")
-	}
-	if strings.TrimSpace(c.Upstream) == "" {
-		return fmt.Errorf("upstream is required")
 	}
 	if len(c.AllowedDomains) == 0 {
 		return fmt.Errorf("allowed_domains is required")

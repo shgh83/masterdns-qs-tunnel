@@ -1,5 +1,5 @@
 {
-  "relay_listen": "127.0.0.1:18080",
+  "socks5_listen": "127.0.0.1:1080",
   "downlink_bind": "0.0.0.0:0",
   "announce_public_ip": "198.51.100.10",
   "announce_receive_port": 0,
