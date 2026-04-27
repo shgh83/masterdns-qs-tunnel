@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"net/netip"
 	"os"
 	"strings"
 	"time"
@@ -157,13 +158,20 @@ func (c ClientConfig) Validate() error {
 	if len(c.SendDomains) == 0 {
 		return fmt.Errorf("send_domains is required")
 	}
-	if strings.TrimSpace(c.AnnouncePublicIP) == "" {
-		return fmt.Errorf("announce_public_ip is required")
+	// announce_public_ip is optional here; if empty it is auto-detected at startup.
+	if strings.TrimSpace(c.AnnouncePublicIP) != "" {
+		if ip, err := netip.ParseAddr(c.AnnouncePublicIP); err != nil || !ip.Is4() {
+			return fmt.Errorf("announce_public_ip must be a valid IPv4 address")
+		}
 	}
-	if strings.TrimSpace(c.SpoofSourceIP) == "" {
-		return fmt.Errorf("spoof_source_ip is required")
+	// spoof_source_ip and spoof_source_port are only needed when the server uses
+	// use_raw_spoofing=true. They are optional for normal (non-spoofed) deployments.
+	if strings.TrimSpace(c.SpoofSourceIP) != "" {
+		if ip, err := netip.ParseAddr(c.SpoofSourceIP); err != nil || !ip.Is4() {
+			return fmt.Errorf("spoof_source_ip must be a valid IPv4 address")
+		}
 	}
-	if c.SpoofSourcePort < 1 || c.SpoofSourcePort > 65535 {
+	if c.SpoofSourcePort != 0 && c.SpoofSourcePort > 65535 {
 		return fmt.Errorf("spoof_source_port must be 1..65535")
 	}
 	if c.ClientIDLength <= 0 {

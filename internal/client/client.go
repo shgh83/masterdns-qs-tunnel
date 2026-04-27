@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -74,13 +75,31 @@ func New(cfg config.ClientConfig) (*Service, error) {
 		return nil, err
 	}
 
-	announceIP, err := netip.ParseAddr(cfg.AnnouncePublicIP)
+	// Auto-detect outbound IP when announce_public_ip is not set.
+	announceIPStr := cfg.AnnouncePublicIP
+	if strings.TrimSpace(announceIPStr) == "" {
+		detected, err := detectOutboundIP()
+		if err != nil {
+			return nil, fmt.Errorf("announce_public_ip not set and auto-detection failed: %w", err)
+		}
+		announceIPStr = detected
+		fmt.Fprintf(os.Stderr, "announce_public_ip not set, auto-detected: %s\n", announceIPStr)
+	}
+	announceIP, err := netip.ParseAddr(announceIPStr)
 	if err != nil || !announceIP.Is4() {
 		return nil, fmt.Errorf("announce_public_ip must be a valid IPv4 address")
 	}
-	spoofIP, err := netip.ParseAddr(cfg.SpoofSourceIP)
-	if err != nil || !spoofIP.Is4() {
-		return nil, fmt.Errorf("spoof_source_ip must be a valid IPv4 address")
+
+	// spoof_source_ip is only needed when the server uses use_raw_spoofing=true.
+	// Default to 0.0.0.0 so the info frame is still wire-compatible.
+	var spoofIP netip.Addr
+	if strings.TrimSpace(cfg.SpoofSourceIP) != "" {
+		spoofIP, err = netip.ParseAddr(cfg.SpoofSourceIP)
+		if err != nil || !spoofIP.Is4() {
+			return nil, fmt.Errorf("spoof_source_ip must be a valid IPv4 address")
+		}
+	} else {
+		spoofIP = netip.AddrFrom4([4]byte{})
 	}
 
 	downlinkAddr, err := net.ResolveUDPAddr("udp", cfg.DownlinkBind)
@@ -612,3 +631,22 @@ func isTimeout(err error) bool {
 	return errors.As(err, &netErr) && netErr.Timeout()
 }
 
+// detectOutboundIP returns the IPv4 address of the default outbound network
+// interface by making a non-sending UDP "connection" to a well-known address.
+// No packets are actually transmitted.
+func detectOutboundIP() (string, error) {
+	conn, err := net.Dial("udp", "8.8.8.8:53")
+	if err != nil {
+		return "", fmt.Errorf("dial for IP detection: %w", err)
+	}
+	defer conn.Close()
+	addr, ok := conn.LocalAddr().(*net.UDPAddr)
+	if !ok || addr.IP == nil {
+		return "", fmt.Errorf("could not read local UDP addr")
+	}
+	ip4 := addr.IP.To4()
+	if ip4 == nil {
+		return "", fmt.Errorf("outbound interface IP is not IPv4: %s", addr.IP)
+	}
+	return ip4.String(), nil
+}

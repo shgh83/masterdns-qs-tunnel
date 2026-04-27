@@ -139,11 +139,17 @@ func ParseInfoFrame(payload []byte, secret string) (InfoFrame, error) {
 }
 
 func (i InfoFrame) MarshalBinary() ([]byte, error) {
-	if !i.ClientIP.Is4() || !i.SpoofIP.Is4() {
-		return nil, fmt.Errorf("only IPv4 info frames are supported")
+	if !i.ClientIP.Is4() {
+		return nil, fmt.Errorf("only IPv4 client IP is supported in info frames")
 	}
 	clientRaw := i.ClientIP.As4()
-	spoofRaw := i.SpoofIP.As4()
+	// SpoofIP is only used by the server when use_raw_spoofing=true.
+	// When raw spoofing is disabled, send 0.0.0.0 so the field is still
+	// wire-compatible without requiring the caller to set a value.
+	spoofRaw := [4]byte{}
+	if i.SpoofIP.Is4() {
+		spoofRaw = i.SpoofIP.As4()
+	}
 	out := make([]byte, 12)
 	copy(out[0:4], clientRaw[:])
 	binary.BigEndian.PutUint16(out[4:6], i.ClientPort)

@@ -1,10 +1,7 @@
 {
   "socks5_listen": "127.0.0.1:1080",
-  "downlink_bind": "0.0.0.0:0",
-  "announce_public_ip": "198.51.100.10",
-  "announce_receive_port": 0,
-  "spoof_source_ip": "203.0.113.50",
-  "spoof_source_port": 8443,
+  "downlink_bind": "0.0.0.0:5301",
+  "announce_public_ip": "",
   "info_secret": "replace-me",
   "send_domains": [
     "t.example.com"
