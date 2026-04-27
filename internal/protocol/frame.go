@@ -10,8 +10,11 @@ import (
 type FrameKind byte
 
 const (
-	FrameData FrameKind = 1
-	FrameInfo FrameKind = 2
+	FrameData       FrameKind = 1 // legacy raw UDP relay data
+	FrameInfo       FrameKind = 2 // client metadata (IP, port, spoof info)
+	FrameConnect    FrameKind = 3 // open a proxied TCP stream
+	FrameStreamData FrameKind = 4 // carry payload for a stream (both directions)
+	FrameStreamFin  FrameKind = 5 // half-close a stream (both directions)
 )
 
 type InfoFrame struct {
@@ -47,11 +50,74 @@ func ParseFrame(frame []byte) (FrameKind, []byte, error) {
 	}
 	kind := FrameKind(frame[0])
 	switch kind {
-	case FrameData, FrameInfo:
+	case FrameData, FrameInfo, FrameConnect, FrameStreamData, FrameStreamFin:
 		return kind, frame[1:], nil
 	default:
 		return 0, nil, fmt.Errorf("unknown frame kind %d", frame[0])
 	}
+}
+
+// BuildConnectFrame builds a FrameConnect uplink frame:
+// [kind:1][stream_id:4][host_len:1][host...][port:2]
+func BuildConnectFrame(streamID uint32, host string, port uint16) []byte {
+	frame := make([]byte, 1+4+1+len(host)+2)
+	frame[0] = byte(FrameConnect)
+	binary.BigEndian.PutUint32(frame[1:5], streamID)
+	frame[5] = byte(len(host))
+	copy(frame[6:6+len(host)], host)
+	binary.BigEndian.PutUint16(frame[6+len(host):], port)
+	return frame
+}
+
+// ParseConnectPayload parses the payload portion (after the kind byte) of a FrameConnect.
+func ParseConnectPayload(payload []byte) (streamID uint32, host string, port uint16, err error) {
+	if len(payload) < 4+1+2 {
+		return 0, "", 0, fmt.Errorf("connect payload too short")
+	}
+	streamID = binary.BigEndian.Uint32(payload[0:4])
+	hostLen := int(payload[4])
+	if len(payload) < 4+1+hostLen+2 {
+		return 0, "", 0, fmt.Errorf("connect payload truncated")
+	}
+	host = string(payload[5 : 5+hostLen])
+	port = binary.BigEndian.Uint16(payload[5+hostLen : 5+hostLen+2])
+	return streamID, host, port, nil
+}
+
+// BuildStreamDataFrame builds a FrameStreamData frame:
+// [kind:1][stream_id:4][data...]
+func BuildStreamDataFrame(streamID uint32, data []byte) []byte {
+	frame := make([]byte, 1+4+len(data))
+	frame[0] = byte(FrameStreamData)
+	binary.BigEndian.PutUint32(frame[1:5], streamID)
+	copy(frame[5:], data)
+	return frame
+}
+
+// ParseStreamDataPayload parses the payload portion (after the kind byte) of a FrameStreamData.
+func ParseStreamDataPayload(payload []byte) (streamID uint32, data []byte, err error) {
+	if len(payload) < 4 {
+		return 0, nil, fmt.Errorf("stream data payload too short")
+	}
+	streamID = binary.BigEndian.Uint32(payload[0:4])
+	data = append([]byte(nil), payload[4:]...)
+	return streamID, data, nil
+}
+
+// BuildStreamFinFrame builds a FrameStreamFin frame: [kind:1][stream_id:4]
+func BuildStreamFinFrame(streamID uint32) []byte {
+	frame := make([]byte, 1+4)
+	frame[0] = byte(FrameStreamFin)
+	binary.BigEndian.PutUint32(frame[1:5], streamID)
+	return frame
+}
+
+// ParseStreamFinPayload parses the payload portion (after the kind byte) of a FrameStreamFin.
+func ParseStreamFinPayload(payload []byte) (uint32, error) {
+	if len(payload) < 4 {
+		return 0, fmt.Errorf("stream fin payload too short")
+	}
+	return binary.BigEndian.Uint32(payload[0:4]), nil
 }
 
 func ParseInfoFrame(payload []byte, secret string) (InfoFrame, error) {
@@ -73,11 +139,17 @@ func ParseInfoFrame(payload []byte, secret string) (InfoFrame, error) {
 }
 
 func (i InfoFrame) MarshalBinary() ([]byte, error) {
-	if !i.ClientIP.Is4() || !i.SpoofIP.Is4() {
-		return nil, fmt.Errorf("only IPv4 info frames are supported")
+	if !i.ClientIP.Is4() {
+		return nil, fmt.Errorf("only IPv4 client IP is supported in info frames")
 	}
 	clientRaw := i.ClientIP.As4()
-	spoofRaw := i.SpoofIP.As4()
+	// SpoofIP is only used by the server when use_raw_spoofing=true.
+	// When raw spoofing is disabled, send 0.0.0.0 so the field is still
+	// wire-compatible without requiring the caller to set a value.
+	spoofRaw := [4]byte{}
+	if i.SpoofIP.Is4() {
+		spoofRaw = i.SpoofIP.As4()
+	}
 	out := make([]byte, 12)
 	copy(out[0:4], clientRaw[:])
 	binary.BigEndian.PutUint16(out[4:6], i.ClientPort)

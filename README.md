@@ -23,13 +23,13 @@ For uplink speed, the DNS transport style is closer to MasterDnsVPN than the ori
 
 ## What it does
 
-- runs as a `client` or `server` CLI
-- accepts local UDP traffic on the client side and tunnels it upward through DNS queries
-- reassembles the DNS uplink on the server side and forwards it to a UDP upstream
-- learns client return metadata from periodic info frames
-- sends downstream payloads back either:
-  - with raw spoofed IPv4 UDP packets when `use_raw_spoofing=true`
-  - or with a normal UDP socket when `use_raw_spoofing=false` for easier local testing
+- runs as a `client` or `server` CLI — no external daemons or relay tools required
+- the **client** exposes a local SOCKS5 proxy; any SOCKS5-capable application can use it immediately
+- the client tunnels TCP streams upward through DNS queries, encoded and fragmented into DNS labels
+- the **server** reassembles the DNS uplink, dials TCP directly to the requested destination, and relays data back
+- the server sends downstream data as plain UDP packets to the client (direct path, no spoofing needed for normal deployments)
+- the client auto-detects its public IP when `announce_public_ip` is not set
+- optionally supports raw spoofed IPv4 UDP replies (`use_raw_spoofing=true`) for advanced network environments
 
 ## Downloads
 
@@ -81,9 +81,10 @@ You will need to replace the example addresses and domains with real values befo
 
 ## Notes
 
-- raw spoofed replies require infrastructure that can actually transmit spoofed packets
-- the current implementation focuses on the UDP relay model
-- IPv4 is supported for the spoof metadata and raw spoof sender
+- `use_raw_spoofing=false` (the default) works on any server without special privileges and is the recommended starting point
+- `use_raw_spoofing=true` requires root / `CAP_NET_RAW` and may be blocked by cloud providers
+- IPv4 is required for both ends in the current implementation
+- no external relay, VPN daemon, or upstream service is needed — the server dials TCP connections directly
 
 ## Support The Project
 

@@ -1,157 +1,216 @@
 # Setup Guide
 
-This guide explains how to deploy `masterdns-qs-tunnel` in the way the current code actually works.
+This guide covers deploying `masterdns-qs-tunnel` for a direct server-to-server test with no NAT involved.
 
-The current implementation is a UDP tunnel:
+## Architecture
 
-- the client accepts local UDP traffic on `relay_listen`
-- the client sends that traffic upward inside DNS queries
-- the server reassembles the DNS uplink and forwards the payload to a UDP `upstream`
-- the server sends UDP replies back to the client either:
-  - through normal UDP when `use_raw_spoofing=false`
-  - through raw spoofed IPv4 UDP packets when `use_raw_spoofing=true`
+```
+[Applications on client server]
+        │ SOCKS5 (TCP)
+        ▼
+[masterdns-qs-tunnel client]
+        │ DNS queries (uplink)
+        ▼ (via public resolvers → authoritative DNS)
+[masterdns-qs-tunnel server]
+        │ TCP (direct-dial to destination)
+        ▼
+[Target service]
 
-## Recommended first deployment
+[masterdns-qs-tunnel server]
+        │ UDP downlink (direct, no spoofing)
+        ▼
+[masterdns-qs-tunnel client  downlink port]
+```
 
-Start with:
+The client provides a local **SOCKS5 proxy** (no external tools needed). The server dials TCP connections directly. No external relay daemon, echo server, or upstream service is required.
 
-- `use_raw_spoofing=false`
-- a simple UDP upstream service
-- a domain delegated to your server
+---
 
-That gives you a safer first validation path before you try raw spoofing.
+## What you need
 
-## 1. Prepare a server
+- Two servers with public IPv4 addresses (no NAT required and none assumed)
+- A domain name you control, with the ability to add NS records
+- Go 1.21+ (to build from source) or a pre-built binary from the releases page
 
-You need a public server that can receive DNS queries for your tunnel domain.
+---
 
-The server must have:
+## Step 1 — Build or download
 
-- a public IPv4 address
-- UDP reachability on port `53`, or a port-forward from UDP `53` to the listen port you choose
-- a UDP service behind the tunnel, referenced by the server `upstream` field
-
-If you keep `listen` as `:5300`, then you still need public DNS traffic on UDP `53` to reach it, usually by redirecting or forwarding UDP `53` to UDP `5300`.
-
-## 2. Prepare DNS delegation
-
-The client sends DNS queries to resolvers, and those resolvers must be able to reach your server as the authoritative nameserver for the tunnel domain.
-
-Typical records look like this:
-
-- `ns.example.com A 203.0.113.10`
-- `t.example.com NS ns.example.com`
-
-Then:
-
-- the client uses `t.example.com` in `send_domains`
-- the server uses `t.example.com` in `allowed_domains`
-- public resolvers forward queries for `*.t.example.com` to your server
-
-Keep the delegated tunnel domain short if possible, because shorter names leave more space for payload labels.
-
-## 3. Configure the server
-
-Start from [server.example.json](/Users/blackestwhite/Documents/vaults/vault/masterdns-qs-tunnel/configs/server.example.json).
-
-Minimum fields to set:
-
-- `listen`: where the server listens for DNS queries, for example `:5300`
-- `allowed_domains`: tunnel suffixes the server will accept, for example `["t.example.com"]`
-- `upstream`: UDP service behind the tunnel, for example `127.0.0.1:9000`
-- `info_secret`: shared secret used for client return-path info frames
-
-Important:
-
-- `client_id_length` and `offset_width` must match the client
-- `use_raw_spoofing=false` is best for first setup
-- `reply_ttl` only matters when spoofed raw replies are enabled
-
-## 4. Configure the client
-
-Start from [client.example.json](/Users/blackestwhite/Documents/vaults/vault/masterdns-qs-tunnel/configs/client.example.json).
-
-Minimum fields to set:
-
-- `relay_listen`: local UDP socket applications send traffic to
-- `announce_public_ip`: the public IPv4 address the server should send replies toward
-- `spoof_source_ip`: IPv4 source address the server should use when raw spoofing is enabled
-- `spoof_source_port`: source port the server should use when raw spoofing is enabled
-- `info_secret`: must match the server
-- `send_domains`: must match the delegated domain served by the server
-- `resolvers` or `resolvers_file`: public resolvers that will carry the DNS uplink
-
-Important:
-
-- `send_domains` must line up with `allowed_domains`
-- `announce_public_ip` should be the real public client IP the server can reach
-- if `announce_receive_port` is `0`, the client advertises the actual bound `downlink_bind` port automatically
-- `duplication` sends the same DNS query to multiple resolvers per fragment; keep it low at first
-
-## 5. Start an upstream UDP service
-
-The current server forwards uplink payloads to a UDP `upstream`, not a TCP service and not a SOCKS server.
-
-Examples of upstreams you can test with:
-
-- a UDP echo service
-- a UDP proxy
-- a UDP-based VPN or transport component you are experimenting with
-
-For an easy first test, use a UDP echo server on the server host and point `upstream` at it.
-
-## 6. Start the server
+Build from source on each machine:
 
 ```bash
-./masterdns-qs-tunnel server -config configs/server.example.json
+git clone https://github.com/blackestwhite/masterdns-qs-tunnel
+cd masterdns-qs-tunnel
+go build -o masterdns-qs-tunnel ./cmd/masterdns-qs-tunnel
+```
+
+Or download a pre-built binary from [GitHub Releases](https://github.com/blackestwhite/masterdns-qs-tunnel/releases).
+
+---
+
+## Step 2 — DNS delegation
+
+The client sends DNS queries to public resolvers. For those queries to reach your server, you must delegate a subdomain to it.
+
+Add these records in your DNS control panel (replace IPs and names):
+
+```
+ns.example.com.  A    <SERVER-PUBLIC-IP>
+t.example.com.   NS   ns.example.com.
+```
+
+- `t.example.com` is the tunnel domain — keep it short to maximise payload space in each DNS label.
+- Public resolvers will forward queries for `*.t.example.com` to `<SERVER-PUBLIC-IP>` on UDP port 53.
+
+If your server cannot listen on port 53 directly (e.g., another service is running there), forward UDP port 53 → 5300:
+
+```bash
+# iptables example
+iptables -t nat -A PREROUTING -p udp --dport 53 -j REDIRECT --to-port 5300
+```
+
+---
+
+## Step 3 — Server config
+
+Copy and edit:
+
+```bash
+cp configs/server.example.json configs/server.json
+```
+
+Minimum fields to set:
+
+```json
+{
+  "listen": ":5300",
+  "allowed_domains": ["t.example.com"],
+  "info_secret": "choose-a-strong-secret",
+  "client_id_length": 7,
+  "offset_width": 3,
+  "reassembly_timeout": "30s",
+  "session_idle_timeout": "2m",
+  "use_raw_spoofing": false,
+  "reply_ttl": 64
+}
+```
+
+- `listen` — UDP port the server listens on for tunnel DNS queries.
+- `allowed_domains` — must match the client `send_domains`.
+- `info_secret` — shared secret; must be identical on client and server.
+- `use_raw_spoofing: false` — use plain UDP replies (correct for direct server-to-server, no root required).
+
+No `upstream` field is needed. The server dials TCP directly to whatever destination the SOCKS5 client requests.
+
+---
+
+## Step 4 — Client config
+
+Copy and edit:
+
+```bash
+cp configs/client.example.json configs/client.json
+```
+
+```json
+{
+  "socks5_listen": "127.0.0.1:1080",
+  "downlink_bind": "0.0.0.0:5301",
+  "announce_public_ip": "",
+  "info_secret": "choose-a-strong-secret",
+  "send_domains": ["t.example.com"],
+  "resolvers": ["1.1.1.1:53", "8.8.8.8:53"],
+  "client_id_length": 7,
+  "offset_width": 3,
+  "max_label_len": 63,
+  "max_qname_len": 253,
+  "query_type": 1,
+  "duplication": 1,
+  "send_delay": "2ms",
+  "info_interval": "20s"
+}
+```
+
+- `socks5_listen` — local SOCKS5 proxy address; point your applications here.
+- `downlink_bind` — UDP port the client listens on for server replies. Use a fixed port (e.g. `0.0.0.0:5301`) so the server can reliably reach it. Make sure this port is reachable from the server (open in firewall).
+- `announce_public_ip` — leave empty (`""`) to auto-detect from the outbound network interface. Set it explicitly if the auto-detected IP is wrong.
+- `info_secret` — must match the server.
+- `send_domains` — must match the server `allowed_domains`.
+- `resolvers` — public DNS resolvers that will carry the DNS uplink to your server.
+
+---
+
+## Step 5 — Open firewall ports
+
+On the **server**:
+- UDP 5300 (or 53) — incoming tunnel DNS queries
+
+On the **client**:
+- UDP 5301 — incoming downlink packets from the server (or whichever port you set in `downlink_bind`)
+
+---
+
+## Step 6 — Start the server
+
+```bash
+./masterdns-qs-tunnel server -config configs/server.json
 ```
 
 Or from source:
 
 ```bash
-go run ./cmd/masterdns-qs-tunnel server -config configs/server.example.json
+go run ./cmd/masterdns-qs-tunnel server -config configs/server.json
 ```
 
-## 7. Start the client
+Expected output:
+
+```
+masterdns-qs-tunnel server listening on :5300
+```
+
+---
+
+## Step 7 — Start the client
 
 ```bash
-./masterdns-qs-tunnel client -config configs/client.example.json
+./masterdns-qs-tunnel client -config configs/client.json
 ```
 
 Or from source:
 
 ```bash
-go run ./cmd/masterdns-qs-tunnel client -config configs/client.example.json
+go run ./cmd/masterdns-qs-tunnel client -config configs/client.json
 ```
 
-## 8. Test the tunnel
+Expected output (with auto-detection):
 
-Send UDP traffic to the client `relay_listen` address.
+```
+announce_public_ip not set, auto-detected: <your-client-ip>
+masterdns-qs-tunnel client started with client_id=<random>
+```
 
-A practical first test is:
+---
 
-- run a UDP echo server as the server `upstream`
-- send a UDP packet to the client `relay_listen`
-- confirm the packet reaches the upstream and that the reply returns to the client
+## Step 8 — Test the tunnel
 
-## 9. Only after that, try raw spoofing
+Use `curl` or any application that supports SOCKS5:
 
-When the non-spoofed path works, you can experiment with:
+```bash
+curl --socks5 127.0.0.1:1080 https://example.com
+```
 
-- `use_raw_spoofing=true`
-- infrastructure that actually permits crafted IPv4 packets
-- a correct `announce_public_ip`
-- a correct `spoof_source_ip` and `spoof_source_port`
+Or configure your browser's proxy settings to use SOCKS5 at `127.0.0.1:1080`.
 
-You should expect raw spoofing to be the highest-risk part of the deployment.
+---
 
 ## Common mistakes
 
-- `send_domains` and `allowed_domains` do not match
-- the delegated NS records do not point to the server actually receiving tunnel queries
-- the server is listening on `:5300`, but public UDP `53` is not forwarded there
-- `info_secret` differs between client and server
-- `announce_public_ip` is wrong
-- a resolver is used that does not forward your delegated zone properly
-- the server `upstream` is not UDP
+| Symptom | Likely cause |
+|---|---|
+| Client gets no downlink packets | `downlink_bind` port is blocked by firewall on the client |
+| DNS queries don't reach server | NS delegation is wrong or UDP 53/5300 is not reachable on the server |
+| `info_secret` error or no sessions | Secrets don't match between client and server |
+| Auto-detected IP is wrong | Set `announce_public_ip` explicitly to the correct public IP |
+| `allowed_domains` mismatch | `send_domains` on client must exactly match `allowed_domains` on server |
+| `client_id_length` / `offset_width` mismatch | Both sides must use the same values (defaults: 7 and 3) |
 
